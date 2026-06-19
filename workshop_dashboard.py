@@ -694,6 +694,8 @@ PAGE = r"""<!DOCTYPE html>
   .visgrp{display:flex;gap:4px;flex-wrap:wrap}
   .vbtn{padding:5px 12px;font-size:12px;background:#23262c;color:#8b95a1;border:1px solid #313640;border-radius:6px;cursor:pointer}
   .vbtn.on{background:#2563eb;color:#fff;border-color:#2563eb}
+  .chk{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:#e6e6e6}
+  .chk input{width:auto;margin:0;accent-color:#2563eb}
   #bbtools{display:inline-flex;gap:4px;flex-wrap:wrap}
   .preview{border:1px solid #313640;border-radius:4px;padding:10px 12px;min-height:140px;background:#0f1217;font-size:13px}
   .preview h1{font-size:19px;margin:.4em 0}.preview h2{font-size:16px;margin:.4em 0}.preview h3{font-size:14px;margin:.3em 0}
@@ -761,7 +763,7 @@ const I18N={
   wsIdLinked:"linked locally → Upload updates this item",
   wsIdMissing:"no local mod_id — paste an existing ID to avoid a duplicate",
   saveCfg:"Save config",privateNote:"※ private — switch to public and Upload again when ready",
-  creditFooter:"Credit footer",creditHint:"Optional — append a link to STS2 Mod Uploader UI at the end of the description.",
+  creditFooter:"Credit",creditHint:"Optional — append a link to STS2 Mod Uploader UI at the end of the description.",
   logReady:"Ready. Steam must be running and logged in to upload.",
   busy:"[busy] another upload is in progress",cfgSaved:"[config] saved",
   imgPick:"[img] pick a file first",imgSet:"[img] set",imgFail:"[img] failed: ",
@@ -786,7 +788,7 @@ const I18N={
   wsIdLinked:"로컬 연결됨 → Upload 시 이 아이템 갱신",
   wsIdMissing:"로컬 mod_id 없음 — 기존 아이템이 있으면 ID 입력(중복 생성 방지)",
   saveCfg:"config 저장",privateNote:"※ private — 확인 후 public 으로 바꿔 다시 Upload",
-  creditFooter:"제작 도구 표기",creditHint:"선택 — 설명 끝에 STS2 Mod Uploader UI 링크를 추가합니다.",
+  creditFooter:"크레딧 표기",creditHint:"선택 — 설명 끝에 STS2 Mod Uploader UI 링크를 추가합니다.",
   logReady:"준비됨. 업로드 시 Steam 이 실행·로그인된 상태여야 합니다.",
   busy:"[busy] 다른 업로드가 진행 중",cfgSaved:"[config] 저장됨",
   imgPick:"[img] 파일을 선택하세요",imgSet:"[img] 등록됨",imgFail:"[img] 실패: ",
@@ -835,6 +837,7 @@ let STATE={};
 async function load(keep){
   const r=await fetch('/api/state'); STATE=await r.json();
   MODS=STATE.mods; $('#gv').textContent=STATE.game_version; $('#upx').textContent=STATE.uploader_ok?'OK':'—';
+  if(!SEL){ const last=localStorage.getItem('lastMod'); if(last && MODS.some(x=>x.id===last)) SEL=last; }
   applyLang();
 }
 function renderWarn(){
@@ -865,7 +868,7 @@ function renderList(){
       ${m.needs_update?'<span class="badge upd" title="'+esc(t('needsUpdate'))+'">⟳</span>':''}
       ${!m.installed?'<span class="badge no">'+esc(t('badgeNotInstalled'))+'</span>':''}
       ${m.workshop_item_id?'<span class="badge muted" title="'+esc(t('filterPublished'))+'">●</span>':''}`;
-    div.onclick=()=>{SEL=m.id;renderList();renderDetail(m);};
+    div.onclick=()=>{SEL=m.id;localStorage.setItem('lastMod',m.id);renderList();renderDetail(m);};
     L.appendChild(div);
   }
 }
@@ -936,7 +939,7 @@ function renderDetail(m){
       </div>
       <label>credit</label>
       <div>
-        <button type="button" class="sec mode" id="f_credit" onclick="toggleCredit()"></button>
+        <label class="chk"><input type="checkbox" id="f_credit" onchange="window.CREDIT=this.checked"> <span id="f_credit_label"></span></label>
         <div class="sub" id="f_credit_hint" style="margin-top:4px"></div>
       </div>
       <label>thumbnail</label>
@@ -976,10 +979,10 @@ function setVis(v){
   const ph=$('#privHint'); if(ph) ph.style.display=(v==='private')?'':'none';
 }
 function applyCreditBtn(){
-  const b=$('#f_credit'); if(b){ b.textContent=t('creditFooter')+': '+(window.CREDIT?'ON':'OFF'); b.classList.toggle('active',!!window.CREDIT); }
+  const cb=$('#f_credit'); if(cb) cb.checked=!!window.CREDIT;
+  const l=$('#f_credit_label'); if(l) l.textContent=t('creditFooter');
   const h=$('#f_credit_hint'); if(h) h.textContent=t('creditHint');
 }
-function toggleCredit(){ window.CREDIT=!window.CREDIT; applyCreditBtn(); }
 // 자주 쓰는 태그 프리셋 (수정 가능). 텍스트 입력이 source of truth, 버튼은 토글만.
 const TAG_PRESETS=["Gameplay","QoL","UI","Cosmetic","Tools","Balance","Cards","Relics","Characters","Localization","Performance"];
 function currentTags(){return (($('#f_tags')&&$('#f_tags').value)||'').split(',').map(s=>s.trim()).filter(Boolean);}
@@ -1067,7 +1070,7 @@ function collect(id){
   m.cfg.changeNote=$('#f_note').value;
   m.cfg.visibility=window.VIS||m.cfg.visibility;
   m.cfg.descMode=window.DMODE||'bbcode';
-  m.cfg.creditFooter=!!window.CREDIT;
+  m.cfg.creditFooter=!!($('#f_credit')&&$('#f_credit').checked);
   return m.cfg;
 }
 async function save(id){
