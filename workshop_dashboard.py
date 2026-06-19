@@ -632,7 +632,12 @@ PAGE = r"""<!DOCTYPE html>
   .sub{color:#8b95a1;font-size:12px}
   .warn{background:#3a2a12;border:1px solid #7a5a1a;color:#f0c674;padding:7px 11px;border-radius:6px;margin:10px 0 0;font-size:13px}
   .wrap{display:flex;gap:16px;margin-top:14px;align-items:flex-start}
-  .list{width:330px;flex:none;border:1px solid #262a31;border-radius:8px;overflow:hidden}
+  .listcol{width:340px;flex:none;border:1px solid #262a31;border-radius:8px;overflow:hidden;display:flex;flex-direction:column}
+  .lbar{padding:8px;border-bottom:1px solid #1d222a;background:#0f1115;display:flex;flex-direction:column;gap:6px}
+  .lbar input,.lbar select{background:#1c1f25;color:#e6e6e6;border:1px solid #313640;border-radius:5px;padding:5px 7px;font:inherit;font-size:12px;width:100%}
+  .lbar .row2{display:flex;gap:6px}
+  .lcount{color:#8b95a1;font-size:11px;padding-left:1px}
+  .list{flex:1;overflow-y:auto;max-height:64vh}
   .li{padding:9px 12px;border-bottom:1px solid #20242b;cursor:pointer;display:flex;gap:8px;align-items:center}
   .li:hover{background:#1b1f26}
   .li.sel{background:#1d2734;border-left:3px solid #2563eb;padding-left:9px}
@@ -687,15 +692,24 @@ PAGE = r"""<!DOCTYPE html>
   </select>
 </div>
 <div class="sub"><span id="l_game"></span>: <b id="gv"></b> · <span id="l_up"></span>: <span id="upx"></span> · <span id="l_hint"></span></div>
-<div class="sub" style="margin-top:6px"><span id="l_sort"></span>:
-  <select id="sort" onchange="SORT=this.value;renderList()">
-    <option value="recent"></option><option value="name"></option><option value="installed"></option>
-  </select>
-</div>
 <div id="warn"></div>
 
 <div class="wrap">
-  <div class="list" id="list"></div>
+  <div class="listcol">
+    <div class="lbar">
+      <input id="q" oninput="renderList()">
+      <div class="row2">
+        <select id="filter" onchange="FILTER=this.value;renderList()">
+          <option value="all"></option><option value="published"></option><option value="needs"></option><option value="unpublished"></option>
+        </select>
+        <select id="sort" onchange="SORT=this.value;renderList()">
+          <option value="recent"></option><option value="name"></option><option value="installed"></option>
+        </select>
+      </div>
+      <div class="lcount" id="lcount"></div>
+    </div>
+    <div class="list" id="list"></div>
+  </div>
   <div class="detail" id="detail"></div>
 </div>
 
@@ -704,6 +718,7 @@ const I18N={
  en:{title:"STS2 Steam Workshop Upload",gameInstall:"Game build",uploader:"Uploader",
   hint:"select a mod on the left to review and upload",sortLabel:"Sort",
   sortRecent:"Recently uploaded",sortName:"Name",sortInstalled:"Installed first",
+  searchPh:"Filter by name…",filterAll:"All",filterPublished:"Published",filterNeeds:"Needs update",filterUnpub:"Unpublished",count:"{n} mods",
   warnNoUploader:"ModUploader.exe not found: ",warnSteam:"Steam does not appear to be running. Start Steam and log in before uploading.",
   emptyDetail:"Select a mod on the left.",badgeInstalled:"installed",badgeNotInstalled:"not installed",unpublished:"unpublished",
   never:"never",now:"just now",min:"m ago",hour:"h ago",day:"d ago",
@@ -727,6 +742,7 @@ const I18N={
  ko:{title:"STS2 Steam Workshop 업로드",gameInstall:"게임 설치본",uploader:"업로더",
   hint:"목록의 모드를 선택하면 우측에서 검토·업로드",sortLabel:"정렬",
   sortRecent:"최신 업로드순",sortName:"이름순",sortInstalled:"설치 먼저",
+  searchPh:"이름으로 검색…",filterAll:"전체",filterPublished:"게시됨",filterNeeds:"업데이트 필요",filterUnpub:"미게시",count:"{n}개",
   warnNoUploader:"ModUploader.exe 를 찾을 수 없습니다: ",warnSteam:"Steam 이 실행되지 않은 것 같습니다. 업로드 전에 Steam 을 켜고 로그인하세요.",
   emptyDetail:"왼쪽에서 모드를 선택하세요.",badgeInstalled:"설치됨",badgeNotInstalled:"미설치",unpublished:"미게시",
   never:"미업로드",now:"방금",min:"분 전",hour:"시간 전",day:"일 전",
@@ -748,7 +764,7 @@ const I18N={
   doneOk:"✅ 완료",doneFail:"❌ 실패: ",closed:"[연결 종료]",
   needsUpdate:"업데이트 필요",deployed:"배포",current:"현재"}
 };
-let MODS=[], SEL=null, busy=false, SORT='recent';
+let MODS=[], SEL=null, busy=false, SORT='recent', FILTER='all';
 let LANG=localStorage.getItem('lang')||((navigator.language||'').startsWith('ko')?'ko':'en');
 const $=s=>document.querySelector(s);
 function t(k){return (I18N[LANG]&&I18N[LANG][k])||I18N.en[k]||k;}
@@ -775,7 +791,8 @@ function applyLang(){
   $('#l_game').textContent=t('gameInstall');
   $('#l_up').textContent=t('uploader');
   $('#l_hint').textContent=t('hint');
-  $('#l_sort').textContent=t('sortLabel');
+  $('#q').placeholder=t('searchPh');
+  const fo=$('#filter').options; fo[0].textContent=t('filterAll'); fo[1].textContent=t('filterPublished'); fo[2].textContent=t('filterNeeds'); fo[3].textContent=t('filterUnpub');
   const so=$('#sort').options; so[0].textContent=t('sortRecent'); so[1].textContent=t('sortName'); so[2].textContent=t('sortInstalled');
   $('#lang').value=LANG;
   renderWarn();
@@ -796,16 +813,28 @@ function renderWarn(){
   if(STATE.steam_running===false) w.innerHTML+='<div class="warn">'+esc(t('warnSteam'))+'</div>';
 }
 function dotClass(m){ if(m.checks.ready) return 'ready'; if(m.checks.title&&m.checks.description) return 'partial'; return 'bad'; }
+function visibleMods(){
+  const q=(($('#q')&&$('#q').value)||'').toLowerCase().trim();
+  return sortMods().filter(m=>{
+    if(FILTER==='published'   && !m.workshop_item_id) return false;
+    if(FILTER==='needs'       && !m.needs_update)     return false;
+    if(FILTER==='unpublished' &&  m.workshop_item_id) return false;
+    if(q && !(m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
 function renderList(){
   const L=$('#list'); L.innerHTML='';
-  for(const m of sortMods()){
+  const list=visibleMods();
+  const c=$('#lcount'); if(c) c.textContent=t('count').replace('{n}',list.length);
+  for(const m of list){
     const div=document.createElement('div');
     div.className='li'+(m.id===SEL?' sel':'');
     div.innerHTML=`<span class="dot ${dotClass(m)}" title="ready=${m.checks.ready}"></span>
       <span class="nm"><b>${esc(m.name)}</b><span>${esc(m.version)} · ${m.workshop_item_id?esc(relTime(m.last_upload)):esc(t('unpublished'))}</span></span>
       ${m.needs_update?'<span class="badge upd" title="'+esc(t('needsUpdate'))+'">⟳</span>':''}
-      ${m.installed?'<span class="badge ok">'+esc(t('badgeInstalled'))+'</span>':'<span class="badge no">'+esc(t('badgeNotInstalled'))+'</span>'}
-      ${m.workshop_item_id?'<span class="badge muted">●</span>':''}`;
+      ${!m.installed?'<span class="badge no">'+esc(t('badgeNotInstalled'))+'</span>':''}
+      ${m.workshop_item_id?'<span class="badge muted" title="'+esc(t('filterPublished'))+'">●</span>':''}`;
     div.onclick=()=>{SEL=m.id;renderList();renderDetail(m);};
     L.appendChild(div);
   }
