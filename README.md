@@ -55,6 +55,14 @@ Copy `config.example.json` to `config.json` and fill in only what you need — e
 
 Equivalent env vars: `STS2_UPLOADER_DIR`, `STS2_PATH`, `STS2_WORKSPACES`, `STS2_DASH_PORT`.
 
+## Claude Code skill
+
+This repo ships a [`workshop-upload`](.claude/skills/workshop-upload/SKILL.md) skill. If you
+open the repo in [Claude Code](https://claude.com/claude-code), you can just ask it to
+*"upload my mod to the Workshop as private"* and it drives the pipeline for you (sets the
+title/description/thumbnail, then runs the uploader and reports the item link). Steam still
+has to be running and logged in.
+
 ## Notes / gotchas
 
 - **`mod_id.txt` is important.** It links a workspace to its Workshop item. If you lose it (e.g. fresh clone), the dashboard shows the mod as "new" and an upload would create a **duplicate** — paste the existing ID into the *workshop ID* field first.
