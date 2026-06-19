@@ -666,6 +666,10 @@ PAGE = r"""<!DOCTYPE html>
   .bbbar{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px;align-items:center}
   .bbbar button{padding:2px 7px;font-size:11px;background:#2b303a}
   .bbbar button.mode.active{background:#2563eb}
+  .tagbtns{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+  .tagbtn{padding:3px 11px;font-size:12px;background:#23262c;color:#8b95a1;border:1px solid #313640;border-radius:14px;cursor:pointer}
+  .tagbtn:hover{border-color:#3f4753}
+  .tagbtn.on{background:#16361f;color:#6ee7a0;border-color:#1f5132}
   #bbtools{display:inline-flex;gap:4px;flex-wrap:wrap}
   .preview{border:1px solid #313640;border-radius:4px;padding:10px 12px;min-height:140px;background:#0f1217;font-size:13px}
   .preview h1{font-size:19px;margin:.4em 0}.preview h2{font-size:16px;margin:.4em 0}.preview h3{font-size:14px;margin:.3em 0}
@@ -894,7 +898,11 @@ function renderDetail(m){
         <textarea id="f_desc" rows="12" oninput="if(window.DVIEW==='preview')applyDescUI()">${esc(m.cfg.description)}</textarea>
         <div id="f_preview" class="preview" style="display:none"></div>
       </div>
-      <label>tags</label><input id="f_tags" value="${esc((m.cfg.tags||[]).join(', '))}" placeholder="${esc(t('tagsPh'))}">
+      <label>tags</label>
+      <div>
+        <input id="f_tags" value="${esc((m.cfg.tags||[]).join(', '))}" placeholder="${esc(t('tagsPh'))}" oninput="syncTagButtons()">
+        <div class="tagbtns" id="tagbtns"></div>
+      </div>
       <label>changeNote</label><input id="f_note" value="${esc(noteVal)}">
       <label>visibility</label>
       <select id="f_vis">
@@ -927,6 +935,24 @@ function renderDetail(m){
 
   D.querySelectorAll('[data-bb]').forEach(b=>b.onclick=e=>{e.preventDefault();bb($('#f_desc'),b.dataset.bb);});
   window.DVIEW='edit'; window.DMODE=m.cfg.descMode||'bbcode'; applyDescUI();
+  renderTagButtons();
+}
+// 자주 쓰는 태그 프리셋 (수정 가능). 텍스트 입력이 source of truth, 버튼은 토글만.
+const TAG_PRESETS=["Gameplay","QoL","UI","Cosmetic","Tools","Balance","Cards","Relics","Characters","Localization","Performance"];
+function currentTags(){return (($('#f_tags')&&$('#f_tags').value)||'').split(',').map(s=>s.trim()).filter(Boolean);}
+function renderTagButtons(){
+  const box=$('#tagbtns'); if(!box) return;
+  box.innerHTML=TAG_PRESETS.map(tg=>`<button type="button" class="tagbtn" data-tag="${esc(tg)}" onclick="toggleTag('${esc(tg)}')">${esc(tg)}</button>`).join('');
+  syncTagButtons();
+}
+function syncTagButtons(){
+  const active=currentTags().map(s=>s.toLowerCase());
+  document.querySelectorAll('#tagbtns .tagbtn').forEach(b=>b.classList.toggle('on',active.includes(b.dataset.tag.toLowerCase())));
+}
+function toggleTag(tag){
+  const arr=currentTags(), i=arr.findIndex(x=>x.toLowerCase()===tag.toLowerCase());
+  if(i>=0) arr.splice(i,1); else arr.push(tag);
+  $('#f_tags').value=arr.join(', '); syncTagButtons();
 }
 function renderBBCode(src){
   let s=esc(src);
