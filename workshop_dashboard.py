@@ -304,6 +304,23 @@ def write_mod_id(mod_id, value):
     return v
 
 
+CREDIT_URL = "https://github.com/ing-gom/sts2-mod-uploader-ui"
+_CREDIT_BB = "\n\n[hr][/hr]\n[i]Published with [url=" + CREDIT_URL + "]STS2 Mod Uploader UI[/url].[/i]"
+_CREDIT_TXT = "\n\nPublished with STS2 Mod Uploader UI — " + CREDIT_URL
+
+
+def _strip_credit(desc):
+    return (desc or "").replace(_CREDIT_BB, "").replace(_CREDIT_TXT, "").rstrip()
+
+
+def _apply_credit(desc, mode, on):
+    """저장 시점에만 푸터를 붙인다(편집창은 항상 깨끗). 기존 푸터는 먼저 제거 → 중복 방지."""
+    desc = _strip_credit(desc)
+    if on:
+        desc += _CREDIT_TXT if mode == "plain" else _CREDIT_BB
+    return desc
+
+
 def default_workshop_cfg(manifest):
     return {
         "title": manifest.get("name", manifest.get("id", "")),
@@ -312,7 +329,8 @@ def default_workshop_cfg(manifest):
         "changeNote": manifest.get("version", ""),
         "tags": [],
         "dependencies": [],
-        "descMode": "bbcode",  # bbcode | plain (UI 토글, 업로더는 무시)
+        "descMode": "bbcode",   # bbcode | plain (UI 토글, 업로더는 무시)
+        "creditFooter": False,  # 설명 끝에 도구 표기 푸터 추가 여부 (옵션)
     }
 
 
@@ -324,6 +342,8 @@ def read_workshop_cfg(mod_id, manifest):
                 cfg = json.load(f)
             base = default_workshop_cfg(manifest)
             base.update({k: v for k, v in cfg.items() if v is not None})
+            base["creditFooter"] = bool(base.get("creditFooter", False))
+            base["description"] = _strip_credit(base.get("description", ""))  # 편집용은 푸터 제거
             return base
         except Exception:
             pass
@@ -452,12 +472,13 @@ def save_workshop_cfg(mod_id, cfg):
     os.makedirs(ws, exist_ok=True)
     out = {
         "title": cfg.get("title", ""),
-        "description": cfg.get("description", ""),
+        "description": _apply_credit(cfg.get("description", ""), cfg.get("descMode", "bbcode"), cfg.get("creditFooter", False)),
         "visibility": cfg.get("visibility", "private"),
         "changeNote": cfg.get("changeNote", ""),
         "tags": cfg.get("tags", []),
         "dependencies": cfg.get("dependencies", []),
         "descMode": cfg.get("descMode", "bbcode"),
+        "creditFooter": bool(cfg.get("creditFooter", False)),
     }
     with open(os.path.join(ws, "workshop.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
@@ -670,6 +691,9 @@ PAGE = r"""<!DOCTYPE html>
   .tagbtn{padding:3px 11px;font-size:12px;background:#23262c;color:#8b95a1;border:1px solid #313640;border-radius:14px;cursor:pointer}
   .tagbtn:hover{border-color:#3f4753}
   .tagbtn.on{background:#16361f;color:#6ee7a0;border-color:#1f5132}
+  .visgrp{display:flex;gap:4px;flex-wrap:wrap}
+  .vbtn{padding:5px 12px;font-size:12px;background:#23262c;color:#8b95a1;border:1px solid #313640;border-radius:6px;cursor:pointer}
+  .vbtn.on{background:#2563eb;color:#fff;border-color:#2563eb}
   #bbtools{display:inline-flex;gap:4px;flex-wrap:wrap}
   .preview{border:1px solid #313640;border-radius:4px;padding:10px 12px;min-height:140px;background:#0f1217;font-size:13px}
   .preview h1{font-size:19px;margin:.4em 0}.preview h2{font-size:16px;margin:.4em 0}.preview h3{font-size:14px;margin:.3em 0}
@@ -737,6 +761,7 @@ const I18N={
   wsIdLinked:"linked locally → Upload updates this item",
   wsIdMissing:"no local mod_id — paste an existing ID to avoid a duplicate",
   saveCfg:"Save config",privateNote:"※ private — switch to public and Upload again when ready",
+  creditFooter:"Credit footer",creditHint:"Optional — append a link to STS2 Mod Uploader UI at the end of the description.",
   logReady:"Ready. Steam must be running and logged in to upload.",
   busy:"[busy] another upload is in progress",cfgSaved:"[config] saved",
   imgPick:"[img] pick a file first",imgSet:"[img] set",imgFail:"[img] failed: ",
@@ -761,6 +786,7 @@ const I18N={
   wsIdLinked:"로컬 연결됨 → Upload 시 이 아이템 갱신",
   wsIdMissing:"로컬 mod_id 없음 — 기존 아이템이 있으면 ID 입력(중복 생성 방지)",
   saveCfg:"config 저장",privateNote:"※ private — 확인 후 public 으로 바꿔 다시 Upload",
+  creditFooter:"제작 도구 표기",creditHint:"선택 — 설명 끝에 STS2 Mod Uploader UI 링크를 추가합니다.",
   logReady:"준비됨. 업로드 시 Steam 이 실행·로그인된 상태여야 합니다.",
   busy:"[busy] 다른 업로드가 진행 중",cfgSaved:"[config] 저장됨",
   imgPick:"[img] 파일을 선택하세요",imgSet:"[img] 등록됨",imgFail:"[img] 실패: ",
@@ -903,11 +929,16 @@ function renderDetail(m){
         <input id="f_tags" value="${esc((m.cfg.tags||[]).join(', '))}" placeholder="${esc(t('tagsPh'))}" oninput="syncTagButtons()">
         <div class="tagbtns" id="tagbtns"></div>
       </div>
-      <label>changeNote</label><input id="f_note" value="${esc(noteVal)}">
+      <label>changeNote</label><textarea id="f_note" rows="2">${esc(noteVal)}</textarea>
       <label>visibility</label>
-      <select id="f_vis">
-        ${['private','public','unlisted','friends_only'].map(v=>`<option value="${v}"${m.cfg.visibility===v?' selected':''}>${v}</option>`).join('')}
-      </select>
+      <div class="visgrp" id="f_vis">
+        ${['private','public','unlisted','friends_only'].map(v=>`<button type="button" class="vbtn${m.cfg.visibility===v?' on':''}" data-vis="${v}" onclick="setVis('${v}')">${v}</button>`).join('')}
+      </div>
+      <label>credit</label>
+      <div>
+        <button type="button" class="sec mode" id="f_credit" onclick="toggleCredit()"></button>
+        <div class="sub" id="f_credit_hint" style="margin-top:4px"></div>
+      </div>
       <label>thumbnail</label>
       <div style="display:flex;gap:6px;align-items:center">
         <input type="file" id="f_imgfile" accept="image/png,image/jpeg,image/webp">
@@ -929,14 +960,26 @@ function renderDetail(m){
       <button class="sec" onclick="save('${m.id}')">${esc(t('saveCfg'))}</button>
       <button onclick="run('${m.id}',false)" ${m.installed?'':'disabled'}>Upload</button>
       <button class="sec" onclick="run('${m.id}',true)" ${m.csproj?'':'disabled'}>Build+Upload</button>
-      ${m.cfg.visibility==='private'?'<span class="sub">'+esc(t('privateNote'))+'</span>':''}
+      <span class="sub" id="privHint" style="${m.cfg.visibility==='private'?'':'display:none'}">${esc(t('privateNote'))}</span>
     </div>
     <div id="log">${esc(t('logReady'))}\n</div>`;
 
   D.querySelectorAll('[data-bb]').forEach(b=>b.onclick=e=>{e.preventDefault();bb($('#f_desc'),b.dataset.bb);});
   window.DVIEW='edit'; window.DMODE=m.cfg.descMode||'bbcode'; applyDescUI();
+  window.VIS=m.cfg.visibility; window.CREDIT=!!m.cfg.creditFooter;
+  applyCreditBtn();
   renderTagButtons();
 }
+function setVis(v){
+  window.VIS=v;
+  document.querySelectorAll('#f_vis .vbtn').forEach(b=>b.classList.toggle('on',b.dataset.vis===v));
+  const ph=$('#privHint'); if(ph) ph.style.display=(v==='private')?'':'none';
+}
+function applyCreditBtn(){
+  const b=$('#f_credit'); if(b){ b.textContent=t('creditFooter')+': '+(window.CREDIT?'ON':'OFF'); b.classList.toggle('active',!!window.CREDIT); }
+  const h=$('#f_credit_hint'); if(h) h.textContent=t('creditHint');
+}
+function toggleCredit(){ window.CREDIT=!window.CREDIT; applyCreditBtn(); }
 // 자주 쓰는 태그 프리셋 (수정 가능). 텍스트 입력이 source of truth, 버튼은 토글만.
 const TAG_PRESETS=["Gameplay","QoL","UI","Cosmetic","Tools","Balance","Cards","Relics","Characters","Localization","Performance"];
 function currentTags(){return (($('#f_tags')&&$('#f_tags').value)||'').split(',').map(s=>s.trim()).filter(Boolean);}
@@ -1022,8 +1065,9 @@ function collect(id){
   m.cfg.description=$('#f_desc').value;
   m.cfg.tags=$('#f_tags').value.split(',').map(s=>s.trim()).filter(Boolean);
   m.cfg.changeNote=$('#f_note').value;
-  m.cfg.visibility=$('#f_vis').value;
+  m.cfg.visibility=window.VIS||m.cfg.visibility;
   m.cfg.descMode=window.DMODE||'bbcode';
+  m.cfg.creditFooter=!!window.CREDIT;
   return m.cfg;
 }
 async function save(id){
