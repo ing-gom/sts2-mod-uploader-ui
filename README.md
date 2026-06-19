@@ -2,6 +2,8 @@
 
 A small **local web dashboard** for publishing & updating your *Slay the Spire 2* mods to the Steam Workshop. It wraps the official [`ModUploader.exe`](https://github.com/MegaCrit/sts2-mod-uploader) (or any STS2 mod uploader CLI) with a UI so you can review and upload from one screen instead of editing JSON and running commands by hand.
 
+**🔗 Project page: https://ing-gom.github.io/sts2-mod-uploader-ui/**
+
 > 🇰🇷 한국어 안내는 아래 [한국어](#한국어) 참고.
 
 <!-- 스크린샷을 docs/screenshot.png 에 추가하면 여기 표시됩니다 -->
