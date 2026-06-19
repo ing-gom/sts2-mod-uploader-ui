@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STS2 Mod Uploader UI — local Steam Workshop dashboard</title>
+<meta name="description" content="A local web dashboard for publishing and updating your Slay the Spire 2 mods to the Steam Workshop — review, thumbnail, BBCode preview, and one-click upload.">
+<style>
+  :root{color-scheme:dark}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.6 system-ui,Segoe UI,sans-serif;background:#0f1115;color:#e6e6e6}
+  a{color:#6ea8fe;text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:980px;margin:0 auto;padding:0 20px}
+  header{padding:54px 0 30px;text-align:center}
+  .eyebrow{color:#8b95a1;font-size:13px;letter-spacing:.08em;text-transform:uppercase}
+  h1{font-size:38px;margin:10px 0 8px;line-height:1.15}
+  h1 .accent{color:#6ee7a0}
+  .tag{color:#b9c2cc;font-size:18px;max-width:680px;margin:0 auto 22px}
+  .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:14px}
+  .btn{display:inline-block;padding:11px 20px;border-radius:8px;font-weight:600;font-size:15px}
+  .btn.primary{background:#2563eb;color:#fff}
+  .btn.ghost{background:#1c2128;color:#e6e6e6;border:1px solid #2a313b}
+  .pills{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px}
+  .pill{background:#171b21;border:1px solid #262c36;color:#8b95a1;font-size:12px;padding:3px 10px;border-radius:20px}
+  .note{background:#172033;border:1px solid #24406b;color:#cfe0ff;border-radius:10px;padding:14px 16px;font-size:14px;margin:26px 0}
+  .note b{color:#fff}
+  section{padding:34px 0;border-top:1px solid #1b1f26}
+  h2{font-size:24px;margin:0 0 18px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+  .card{background:#141821;border:1px solid #222834;border-radius:12px;padding:16px 18px}
+  .card h3{margin:0 0 6px;font-size:16px}
+  .card p{margin:0;color:#aeb6c0;font-size:14px}
+  ol.steps{counter-reset:s;list-style:none;padding:0;margin:0}
+  ol.steps li{position:relative;padding:0 0 18px 44px;border-left:2px solid #222834;margin-left:14px}
+  ol.steps li:last-child{border-left-color:transparent}
+  ol.steps li::before{counter-increment:s;content:counter(s);position:absolute;left:-15px;top:-2px;width:28px;height:28px;
+    background:#2563eb;color:#fff;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:700}
+  code,pre{font-family:Consolas,monospace}
+  pre{background:#0a0c10;border:1px solid #1f242c;border-radius:8px;padding:12px 14px;overflow:auto;font-size:13.5px;color:#cbd3dc}
+  code.inline{background:#1a1f27;border:1px solid #262c36;border-radius:4px;padding:1px 6px;font-size:13px}
+  .req{color:#aeb6c0;font-size:14.5px}
+  .req li{margin:6px 0}
+  footer{padding:30px 0 56px;color:#8b95a1;font-size:13px;text-align:center;border-top:1px solid #1b1f26}
+
+  /* ---- mock preview of the dashboard ---- */
+  .mock{margin:30px auto 0;max-width:900px;border:1px solid #262a31;border-radius:12px;overflow:hidden;
+    background:#14161a;box-shadow:0 20px 60px rgba(0,0,0,.45)}
+  .mock .bar{display:flex;align-items:center;gap:7px;padding:9px 12px;background:#0e1014;border-bottom:1px solid #1d222a}
+  .mock .bar i{width:11px;height:11px;border-radius:50%;display:inline-block}
+  .mock .bar i:nth-child(1){background:#ff5f56}.mock .bar i:nth-child(2){background:#ffbd2e}.mock .bar i:nth-child(3){background:#27c93f}
+  .mock .bar span{margin-left:8px;color:#6b7480;font-size:12px}
+  .mock .body{display:flex;gap:14px;padding:14px}
+  .mock .list{width:230px;flex:none;border:1px solid #262a31;border-radius:8px;overflow:hidden;font-size:12px}
+  .mock .li{display:flex;align-items:center;gap:7px;padding:8px 10px;border-bottom:1px solid #20242b}
+  .mock .li.sel{background:#1d2734;border-left:3px solid #2563eb}
+  .mock .li b{display:block;color:#e6e6e6;font-size:12px}
+  .mock .li small{color:#8b95a1;font-size:10px}
+  .dot{width:8px;height:8px;border-radius:50%;flex:none}
+  .dot.g{background:#6ee7a0}.dot.y{background:#f0c674}.dot.b{background:#5b6270}
+  .bdg{margin-left:auto;font-size:9px;font-weight:700;padding:1px 6px;border-radius:9px}
+  .bdg.ok{background:#16361f;color:#6ee7a0}.bdg.up{background:#3a2e12;color:#f0b840}
+  .mock .detail{flex:1;border:1px solid #262a31;border-radius:8px;padding:14px;font-size:12px;min-width:0}
+  .mock .thumb{width:150px;height:90px;background:linear-gradient(135deg,#1d2430,#11151b);border:1px solid #2a313b;border-radius:6px;float:left;margin:0 12px 8px 0;display:grid;place-items:center;color:#5b6270;font-size:11px}
+  .mock .chk{list-style:none;margin:8px 0 0;padding:0;font-size:12px;clear:both}
+  .mock .chk li{padding:2px 0;color:#cbd3dc}
+  .mock .chk .p{color:#6ee7a0}
+  .mock .ready{color:#6ee7a0;font-weight:700;margin-top:6px}
+  .mock .btns{margin-top:12px;display:flex;gap:8px}
+  .mock .b{font-size:11px;padding:6px 12px;border-radius:5px;background:#2563eb;color:#fff}
+  .mock .b.s{background:#3a3f48}
+  @media(max-width:560px){.mock .list{display:none}h1{font-size:30px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Slay the Spire 2 · modding tool</div>
+    <h1>STS2 <span class="accent">Mod Uploader</span> UI</h1>
+    <p class="tag">A local web dashboard for publishing &amp; updating your Slay the Spire 2 mods to the Steam Workshop — review everything, fix the thumbnail, preview BBCode, and upload in one click.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/ing-gom/sts2-mod-uploader-ui">View on GitHub</a>
+      <a class="btn ghost" href="#run">How to run</a>
+    </div>
+    <div class="pills">
+      <span class="pill">MIT licensed</span>
+      <span class="pill">Python · stdlib + Pillow</span>
+      <span class="pill">Windows · Steam</span>
+      <span class="pill">EN / 한국어</span>
+    </div>
+
+    <!-- mock preview (replace with docs/screenshot.png for a real shot) -->
+    <div class="mock" aria-hidden="true">
+      <div class="bar"><i></i><i></i><i></i><span>127.0.0.1:8791 — STS2 Steam Workshop Upload</span></div>
+      <div class="body">
+        <div class="list">
+          <div class="li sel"><span class="dot g"></span><span><b>My Skin Mod</b><small>v0.19.0 · 2h ago</small></span><span class="bdg ok">●</span></div>
+          <div class="li"><span class="dot y"></span><span><b>Map Tweaks</b><small>v0.2.1 · 1d ago</small></span><span class="bdg up">⟳</span></div>
+          <div class="li"><span class="dot b"></span><span><b>Speed Slider</b><small>v0.1.0 · unpublished</small></span></div>
+          <div class="li"><span class="dot g"></span><span><b>RNG Fix</b><small>v0.1.1 · 3d ago</small></span><span class="bdg ok">●</span></div>
+        </div>
+        <div class="detail">
+          <div class="thumb">thumbnail</div>
+          <b style="font-size:14px">My Skin Mod</b> <small style="color:#8b95a1">v0.19.0</small>
+          <ul class="chk">
+            <li><span class="p">✔</span> Title set</li>
+            <li><span class="p">✔</span> Description set (BBCode)</li>
+            <li><span class="p">✔</span> Thumbnail set (under 1&nbsp;MB)</li>
+            <li><span class="p">✔</span> Content to upload</li>
+            <li><span class="p">✔</span> Workshop item linked</li>
+          </ul>
+          <div class="ready">✔ Ready to publish</div>
+          <div class="btns"><span class="b">Upload</span><span class="b s">Build + Upload</span></div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="note">
+    <b>This runs on your own machine.</b> Steam Workshop uploads go through your local Steam client, so there is no hosted
+    "upload from a website" — like every Steam mod uploader, you run it locally and it publishes under <i>your</i> Steam
+    account, with <i>your</i> mods. This page is just the intro; grab it from GitHub and run it yourself.
+  </div>
+
+  <section>
+    <h2>What it does</h2>
+    <div class="grid">
+      <div class="card"><h3>Scans your mods/ folder</h3><p>Auto-detects your Steam install and lists every installed mod. No config needed to get started.</p></div>
+      <div class="card"><h3>Registration checklist</h3><p>See at a glance whether the title, description, thumbnail, content and Workshop item are set — before you publish.</p></div>
+      <div class="card"><h3>Thumbnail, handled</h3><p>Pick any image; it is auto-converted to PNG and shrunk under Steam's 1&nbsp;MB preview limit.</p></div>
+      <div class="card"><h3>BBCode with live preview</h3><p>Write your description with insert buttons and an Edit / Preview toggle that renders it the way Steam will.</p></div>
+      <div class="card"><h3>Update detection</h3><p>When a mod's version changes, a ⟳ badge shows the deployed → current diff and pre-fills the change note.</p></div>
+      <div class="card"><h3>One-click upload</h3><p>Packages the installed mod (skipping runtime junk) and runs the official uploader, streaming the log live.</p></div>
+    </div>
+  </section>
+
+  <section id="run">
+    <h2>Run it locally</h2>
+    <ol class="steps">
+      <li><b>Get the official uploader.</b> Download <code class="inline">ModUploader-win-x64</code> and put the folder next to the script (or point <code class="inline">config.json</code> / <code class="inline">STS2_UPLOADER_DIR</code> at it).</li>
+      <li><b>Get this tool.</b> <code class="inline">git clone https://github.com/ing-gom/sts2-mod-uploader-ui</code></li>
+      <li><b>Install Pillow &amp; run.</b>
+        <pre>pip install pillow
+python workshop_dashboard.py</pre>
+      </li>
+      <li><b>Open the dashboard</b> at the printed URL (default <code class="inline">http://127.0.0.1:8791</code>), pick a mod, fill it in, and upload. Start with <code class="inline">private</code>, verify on Steam, then switch to public.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Requirements</h2>
+    <ul class="req">
+      <li><b>Windows</b> with <b>Steam running and logged in</b> (the uploader uses the Steam client — it can't run headless).</li>
+      <li><b>Python 3.8+</b> and <b>Pillow</b> (<code class="inline">pip install pillow</code>) for thumbnail processing.</li>
+      <li>The official <b>STS2 mod uploader</b> (<code class="inline">ModUploader.exe</code> + <code class="inline">steam_api64.dll</code> + <code class="inline">steam_appid.txt</code>).</li>
+    </ul>
+    <p class="req" style="margin-top:14px">Full setup, configuration and gotchas are in the
+      <a href="https://github.com/ing-gom/sts2-mod-uploader-ui#readme">README</a> (English &amp; 한국어).</p>
+  </section>
+
+</div>
+<footer>
+  <div class="wrap">
+    <a href="https://github.com/ing-gom/sts2-mod-uploader-ui">GitHub</a> ·
+    <a href="https://github.com/ing-gom/sts2-mod-uploader-ui/blob/main/LICENSE">MIT License</a><br>
+    Independent community tool — not affiliated with Mega Crit.
+  </div>
+</footer>
+</body>
+</html>
