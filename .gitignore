@@ -1,0 +1,18 @@
+# local upload workspaces (per-mod workshop.json / mod_id.txt / content / image.png)
+.workshop/
+
+# generated placeholder thumbnail
+.placeholder.png
+
+# personal config (ship config.example.json instead)
+config.json
+
+# the official uploader (download separately — see README)
+ModUploader-win-x64/
+ModUploader.exe
+steam_api64.dll
+steam_appid.txt
+
+# python
+__pycache__/
+*.pyc
