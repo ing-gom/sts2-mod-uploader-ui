@@ -121,6 +121,13 @@ IMAGE_LIMIT = 1_048_576
 EXCLUDE_GLOBS = ["*.preset", "*.log", "*.tmp", "mod_id.txt",
                  "Thumbs.db", ".DS_Store", "desktop.ini"] + list(CONFIG.get("exclude", []))
 
+# Per-mod extra excludes. The STS2 Mod Translator writes a runtime "Translations"
+# folder (user-local translation data / source dumps) into its own install dir;
+# drop it for that mod only. NOTE: Windows fnmatch is case-insensitive, so a global
+# "Translations" rule would also eat a translation-pack mod's lowercase "translations"
+# payload folder -- hence this must stay scoped to the translator mod id.
+EXCLUDE_GLOBS_BY_MOD = {"Sts2ModTranslator": ["Translations"]}
+
 PORT = int(os.environ.get("STS2_DASH_PORT", str(CONFIG.get("port", 8791))))
 
 # only one upload at a time (uploader / Steam is single-instance)
@@ -548,8 +555,10 @@ def sync_content(mod, log):
         shutil.rmtree(dst)
     skipped = []
 
+    globs = EXCLUDE_GLOBS + EXCLUDE_GLOBS_BY_MOD.get(mod["id"], [])
+
     def _ignore(dirpath, names):
-        drop = set(shutil.ignore_patterns(*EXCLUDE_GLOBS)(dirpath, names))
+        drop = set(shutil.ignore_patterns(*globs)(dirpath, names))
         for nm in drop:
             if os.path.isfile(os.path.join(dirpath, nm)):
                 skipped.append(os.path.relpath(os.path.join(dirpath, nm), src))
