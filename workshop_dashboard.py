@@ -335,7 +335,10 @@ def default_workshop_cfg(manifest):
         "visibility": "private",
         "changeNote": manifest.get("version", ""),
         "tags": [],
-        "dependencies": [],
+        "dependencies": [],       # 사용자 명시 override (있으면 정확히 동기화)
+        "dependenciesLive": [],   # 업로드 시 창작마당에서 자동 가져온 현재 목록 (표시용)
+        "language": "english",    # 위 title/description 의 기본 언어 (Steam API 코드)
+        "localizations": [],      # 추가 언어별 {language,title,description}
         "descMode": "bbcode",   # bbcode | plain (UI 토글, 업로더는 무시)
         "creditFooter": False,  # 설명 끝에 도구 표기 푸터 추가 여부 (옵션)
     }
@@ -351,6 +354,8 @@ def read_workshop_cfg(mod_id, manifest):
             base.update({k: v for k, v in cfg.items() if v is not None})
             base["creditFooter"] = bool(base.get("creditFooter", False))
             base["description"] = _strip_credit(base.get("description", ""))  # 편집용은 푸터 제거
+            for L in (base.get("localizations") or []):
+                L["description"] = _strip_credit(L.get("description", ""))  # 언어별 설명도 푸터 제거
             return base
         except Exception:
             pass
@@ -483,10 +488,37 @@ def save_workshop_cfg(mod_id, cfg):
         "visibility": cfg.get("visibility", "private"),
         "changeNote": cfg.get("changeNote", ""),
         "tags": cfg.get("tags", []),
-        "dependencies": cfg.get("dependencies", []),
         "descMode": cfg.get("descMode", "bbcode"),
         "creditFooter": bool(cfg.get("creditFooter", False)),
     }
+    # 필요한 아이템(Required Items) = Steam dependencies.
+    #  비어 있으면 키 자체를 생략한다 → 패치된 업로더가 기존 required items 를 건드리지 않음
+    #  (빈 배열 [] 을 쓰면 업로더가 Steam 의 기존 항목을 전부 제거해 버린다).
+    #  값이 있을 때만 기록 → 그 경우엔 대시보드가 source of truth 로서 동기화.
+    deps = [int(d) for d in (cfg.get("dependencies") or []) if str(d).strip().isdigit()]
+    if deps:
+        out["dependencies"] = deps
+    # dependenciesLive = 업로더가 업로드 시 창작마당에서 자동으로 가져와 기록하는 display-only 미러.
+    #  대시보드 저장이 이 값을 지우지 않도록 그대로 보존(reconcile 에는 쓰이지 않음, 표시용).
+    live = [int(d) for d in (cfg.get("dependenciesLive") or []) if str(d).strip().isdigit()]
+    if live:
+        out["dependenciesLive"] = live
+    # 다국어: 기본 언어 + 언어별 타이틀/설명. 푸터는 각 언어 설명에도 동일 적용(편집창은 깨끗).
+    out["language"] = (cfg.get("language") or "english").strip() or "english"
+    mode = cfg.get("descMode", "bbcode")
+    on = cfg.get("creditFooter", False)
+    locs = []
+    for L in (cfg.get("localizations") or []):
+        lang = (L.get("language") or "").strip()
+        if not lang:
+            continue
+        locs.append({
+            "language": lang,
+            "title": L.get("title", ""),
+            "description": _apply_credit(L.get("description", ""), mode, on),
+        })
+    if locs:
+        out["localizations"] = locs
     with open(os.path.join(ws, "workshop.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
 
@@ -700,6 +732,11 @@ PAGE = r"""<!DOCTYPE html>
   .tagbtn{padding:3px 11px;font-size:12px;background:#23262c;color:#8b95a1;border:1px solid #313640;border-radius:14px;cursor:pointer}
   .tagbtn:hover{border-color:#3f4753}
   .tagbtn.on{background:#16361f;color:#6ee7a0;border-color:#1f5132}
+  .langtab{padding:4px 11px;font-size:12px;background:#23262c;color:#8b95a1;border:1px solid #313640;border-radius:14px;cursor:pointer}
+  .langtab:hover{border-color:#3f4753}
+  .langtab.has{color:#6ee7a0;border-color:#1f5132}
+  .langtab.cur{background:#1d2734;border-color:#2563eb;color:#fff}
+  .langtab .lp{font-size:9px;background:#2563eb;color:#fff;border-radius:6px;padding:0 4px;margin-left:5px;vertical-align:middle}
   .visgrp{display:flex;gap:4px;flex-wrap:wrap}
   .vbtn{padding:5px 12px;font-size:12px;background:#23262c;color:#8b95a1;border:1px solid #313640;border-radius:6px;cursor:pointer}
   .vbtn.on{background:#2563eb;color:#fff;border-color:#2563eb}
@@ -768,6 +805,12 @@ const I18N={
   readyYes:"✔ Ready to publish",readyNo:"⚠ Some items missing",
   desc:"description",edit:"Edit",preview:"Preview",uploadAs:"Upload as",bbcode:"BBCode",plain:"Plain text",
   tagsPh:"tool, ...",thumbHint:"pick a file → auto-converted to PNG under 1MB",setBtn:"Set",
+  reqItems:"required items",reqItemsPh:"workshop item IDs, comma-separated (e.g. 3752522987)",
+  reqItemsHint:"Steam \"Required Items\". Leave empty: whatever is set on the Workshop page is preserved automatically and re-imported on every upload. Fill in only to override and manage them here.",
+  reqItemsLive:"Auto-synced from Workshop (last upload):",
+  langLabel:"languages",langDefault:"default",
+  langNoteDefault:"Default (shown when a user's Steam language isn't provided): {lang}. Click a language to edit its title & description below. ✓ = provided; clear both fields to drop a language.",
+  langSetPrimary:"make current language the default",
   wsIdPh:"existing Workshop item ID (leave empty to create new on Upload)",apply:"Apply",
   wsIdLinked:"linked locally → Upload updates this item",
   wsIdMissing:"no local mod_id — paste an existing ID to avoid a duplicate",
@@ -793,6 +836,12 @@ const I18N={
   readyYes:"✔ 게시 준비 완료",readyNo:"⚠ 미충족 항목 있음",
   desc:"설명",edit:"편집",preview:"미리보기",uploadAs:"업로드 형식",bbcode:"BBCode",plain:"일반텍스트",
   tagsPh:"tool, ...",thumbHint:"파일 선택 → 1MB 이하 PNG 자동 변환",setBtn:"등록",
+  reqItems:"필요한 아이템",reqItemsPh:"워크샵 아이템 ID, 쉼표로 구분 (예: 3752522987)",
+  reqItemsHint:"Steam '필요한 아이템(Required Items)'. 비워두면 워크샵에 설정된 항목이 업로드 때마다 자동 유지·재반영됩니다(자동 가져오기). 입력하면 그 목록으로 직접 지정(덮어쓰기).",
+  reqItemsLive:"워크샵에서 자동 동기화됨(마지막 업로드 기준):",
+  langLabel:"언어",langDefault:"기본",
+  langNoteDefault:"기본(사용자 Steam 언어가 없을 때 표시): {lang}. 언어를 클릭하면 아래 타이틀·설명이 그 언어로 바뀝니다. ✓ = 제공됨, 두 칸을 비우면 해당 언어 제거.",
+  langSetPrimary:"현재 언어를 기본으로 지정",
   wsIdPh:"기존 워크샵 아이템 ID (없으면 비워두면 Upload 시 새로 생성)",apply:"적용",
   wsIdLinked:"로컬 연결됨 → Upload 시 이 아이템 갱신",
   wsIdMissing:"로컬 mod_id 없음 — 기존 아이템이 있으면 ID 입력(중복 생성 방지)",
@@ -914,7 +963,12 @@ function renderDetail(m){
     </div>
 
     <div class="form">
-      <label>title</label><input id="f_title" value="${esc(m.cfg.title)}">
+      <label>${esc(t('langLabel'))}</label>
+      <div>
+        <div class="tagbtns" id="langtabs"></div>
+        <div class="sub" id="langnote" style="margin-top:5px"></div>
+      </div>
+      <label>title</label><input id="f_title" value="${esc(m.cfg.title)}" oninput="langTitleInput()">
       <label>${esc(t('desc'))}</label>
       <div>
         <div class="bbbar">
@@ -933,13 +987,19 @@ function renderDetail(m){
           <button class="sec mode" id="m_bb" onclick="setMode('bbcode')">${esc(t('bbcode'))}</button>
           <button class="sec mode" id="m_pl" onclick="setMode('plain')">${esc(t('plain'))}</button>
         </div>
-        <textarea id="f_desc" rows="12" oninput="if(window.DVIEW==='preview')applyDescUI()">${esc(m.cfg.description)}</textarea>
+        <textarea id="f_desc" rows="12" oninput="langDescInput()">${esc(m.cfg.description)}</textarea>
         <div id="f_preview" class="preview" style="display:none"></div>
       </div>
       <label>tags</label>
       <div>
         <input id="f_tags" value="${esc((m.cfg.tags||[]).join(', '))}" placeholder="${esc(t('tagsPh'))}" oninput="syncTagButtons()">
         <div class="tagbtns" id="tagbtns"></div>
+      </div>
+      <label>${esc(t('reqItems'))}</label>
+      <div>
+        <input id="f_deps" value="${esc((m.cfg.dependencies||[]).join(', '))}" placeholder="${esc(t('reqItemsPh'))}">
+        <div class="sub" style="margin-top:4px">${esc(t('reqItemsHint'))}</div>
+        ${(m.cfg.dependenciesLive&&m.cfg.dependenciesLive.length)?'<div class="sub" style="margin-top:4px;color:#6ee7a0">'+esc(t('reqItemsLive'))+' '+m.cfg.dependenciesLive.map(x=>esc(String(x))).join(', ')+'</div>':''}
       </div>
       <label>changeNote</label><textarea id="f_note" rows="2">${esc(noteVal)}</textarea>
       <label>visibility</label>
@@ -981,6 +1041,45 @@ function renderDetail(m){
   window.VIS=m.cfg.visibility; window.CREDIT=!!m.cfg.creditFooter;
   applyCreditBtn();
   renderTagButtons();
+  // 언어별 타이틀/설명을 하나의 맵으로 보관. 기본 언어 + 추가 언어 모두 포함.
+  window.LANGDATA={};
+  window.PRIMARYLANG=m.cfg.language||'english';
+  window.LANGDATA[window.PRIMARYLANG]={title:m.cfg.title||'',description:m.cfg.description||''};
+  (m.cfg.localizations||[]).forEach(L=>{ if(L.language) window.LANGDATA[L.language]={title:L.title||'',description:L.description||''}; });
+  window.CURLANG=window.PRIMARYLANG;
+  renderLangTabs(); updateLangNote();
+}
+function langHas(c){const d=window.LANGDATA&&window.LANGDATA[c];return !!(d&&((d.title&&d.title.trim())||(d.description&&d.description.trim())));}
+function renderLangTabs(){
+  const box=$('#langtabs'); if(!box) return;
+  box.innerHTML=LANGS.map(([c,n])=>{
+    const cls='langtab'+(c===window.CURLANG?' cur':'')+(langHas(c)?' has':'');
+    const badge=(c===window.PRIMARYLANG)?' <span class="lp">'+esc(t('langDefault'))+'</span>':'';
+    return `<button type="button" class="${cls}" onclick="selectLang('${c}')">${langHas(c)?'✓ ':''}${esc(n)}${badge}</button>`;
+  }).join('');
+}
+function saveCurLang(){
+  if(!window.CURLANG||!window.LANGDATA) return;
+  window.LANGDATA[window.CURLANG]={title:($('#f_title')?$('#f_title').value:''),description:($('#f_desc')?$('#f_desc').value:'')};
+}
+function selectLang(c){
+  saveCurLang();
+  window.CURLANG=c;
+  if(!window.LANGDATA[c]) window.LANGDATA[c]={title:'',description:''};
+  const d=window.LANGDATA[c];
+  if($('#f_title')) $('#f_title').value=d.title||'';
+  if($('#f_desc'))  $('#f_desc').value=d.description||'';
+  applyDescUI(); renderLangTabs(); updateLangNote();
+}
+function langTitleInput(){ if(window.LANGDATA&&window.CURLANG) window.LANGDATA[window.CURLANG].title=$('#f_title').value; renderLangTabs(); }
+function langDescInput(){ if(window.LANGDATA&&window.CURLANG) window.LANGDATA[window.CURLANG].description=$('#f_desc').value; if(window.DVIEW==='preview') applyDescUI(); renderLangTabs(); }
+function setPrimaryLang(){ saveCurLang(); window.PRIMARYLANG=window.CURLANG; renderLangTabs(); updateLangNote(); }
+function updateLangNote(){
+  const el=$('#langnote'); if(!el) return;
+  let html=esc(t('langNoteDefault')).replace('{lang}','<b>'+esc(langName(window.PRIMARYLANG))+'</b>');
+  if(window.CURLANG&&window.CURLANG!==window.PRIMARYLANG)
+    html+=' · <a href="#" onclick="setPrimaryLang();return false">'+esc(t('langSetPrimary'))+'</a>';
+  el.innerHTML=html;
 }
 function setVis(v){
   window.VIS=v;
@@ -992,6 +1091,12 @@ function applyCreditBtn(){
   const l=$('#f_credit_label'); if(l) l.textContent=t('creditFooter');
   const h=$('#f_credit_hint'); if(h) h.textContent=t('creditHint');
 }
+// Steam API 언어 코드(value) → 표시명. 워크샵 언어별 타이틀/설명용.
+const LANGS=[["english","English"],["koreana","한국어"],["schinese","简体中文"],["tchinese","繁體中文"],
+  ["japanese","日本語"],["french","Français"],["german","Deutsch"],["spanish","Español"],["latam","Español (LATAM)"],
+  ["russian","Русский"],["brazilian","Português (BR)"],["portuguese","Português"],["italian","Italiano"],
+  ["polish","Polski"],["turkish","Türkçe"],["thai","ไทย"],["ukrainian","Українська"],["vietnamese","Tiếng Việt"]];
+function langName(c){const e=LANGS.find(x=>x[0]===c);return e?e[1]:c;}
 // 자주 쓰는 태그 프리셋 (수정 가능). 텍스트 입력이 source of truth, 버튼은 토글만.
 const TAG_PRESETS=["Gameplay","QoL","UI","Cosmetic","Tools","Balance","Cards","Relics","Characters","Localization","Performance"];
 function currentTags(){return (($('#f_tags')&&$('#f_tags').value)||'').split(',').map(s=>s.trim()).filter(Boolean);}
@@ -1073,9 +1178,18 @@ function bb(ta,tpl){
 function logln(x){const l=$('#log'); if(l){l.textContent+=x+"\n";l.scrollTop=l.scrollHeight;}}
 function collect(id){
   const m=MODS.find(x=>x.id===id);
-  m.cfg.title=$('#f_title').value;
-  m.cfg.description=$('#f_desc').value;
+  saveCurLang();  // 현재 보고 있는 언어의 편집 내용을 LANGDATA 에 반영
+  const prim=window.PRIMARYLANG||'english';
+  const pd=(window.LANGDATA&&window.LANGDATA[prim])||{title:'',description:''};
+  m.cfg.language=prim;
+  m.cfg.title=pd.title||'';
+  m.cfg.description=pd.description||'';
+  m.cfg.localizations=Object.keys(window.LANGDATA||{})
+    .filter(c=>c!==prim)
+    .map(c=>({language:c,title:window.LANGDATA[c].title||'',description:window.LANGDATA[c].description||''}))
+    .filter(L=>(L.title&&L.title.trim())||(L.description&&L.description.trim()));
   m.cfg.tags=$('#f_tags').value.split(',').map(s=>s.trim()).filter(Boolean);
+  m.cfg.dependencies=(($('#f_deps')&&$('#f_deps').value)||'').split(/[\s,]+/).map(s=>s.trim()).filter(s=>/^\d+$/.test(s)).map(Number);
   m.cfg.changeNote=$('#f_note').value;
   m.cfg.visibility=window.VIS||m.cfg.visibility;
   m.cfg.descMode=window.DMODE||'bbcode';
