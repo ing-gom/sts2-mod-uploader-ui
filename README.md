@@ -42,6 +42,17 @@ Then open the printed URL (default `http://127.0.0.1:8791`). Select a mod, fill 
 
 > ⚠️ Uploading **creates a real Steam Workshop item** under your account. Start with `private`.
 
+### One-click launch (Windows)
+
+Don't want to type the command each time? Two extras are included:
+
+<p align="left"><img src="icon.png" alt="launcher icon" width="72"></p>
+
+- **`launch.bat`** — double-click it to start the dashboard and open your browser automatically. It finds Python on its own (`py`/`python`) and runs from wherever the repo lives, so no path editing is needed.
+- **`Create Desktop Shortcut.bat`** — double-click once to drop a **STS2 Mod Uploader** icon on your Desktop (pointing at `launch.bat`, with the icon above). After that, launch the dashboard any time from that icon.
+
+The Desktop icon is generated from `icon.ico`, which ships in the repo. To regenerate or customize it, run `python make_icon.py` (uses Pillow, already required).
+
 ## Configuration (optional)
 
 Copy `config.example.json` to `config.json` and fill in only what you need — everything is optional:
@@ -94,6 +105,8 @@ The patch is also proposed upstream; if it lands in the official tool, you can s
 **필요**: Windows + **Steam 실행/로그인**(헤드리스 불가), Python 3.8+ & `pip install pillow`, STS2 업로더. **패치 빌드(권장)** = 이 repo [Releases](https://github.com/ing-gom/sts2-mod-uploader-ui/releases)의 `ModUploader-patched-win-x64.zip`(다국어 + 필요한 아이템 보존 추가, 공식 [MegaCrit/sts2-mod-uploader](https://github.com/MegaCrit/sts2-mod-uploader) MIT 포크). 공식 빌드도 일반 업로드는 되지만 다국어 무시 + 필요한 아이템 초기화. 업로더 위치는 스크립트 옆에 두거나 `config.json`의 `uploader_dir` / `STS2_UPLOADER_DIR`로 지정.
 
 **실행**: `pip install pillow` 후 `python workshop_dashboard.py` → 안내 URL 열기 → 모드 선택 → 타이틀/설명/썸네일 입력 → 처음엔 `private`로 Upload → 확인 후 `public`. ⚠️ 업로드는 **실제 창작마당 아이템을 생성**하므로 처음엔 private 권장. `mod_id.txt`는 아이템 연결 정보라 잃으면 중복 생성 위험 → 워크샵 ID 칸에 기존 ID 입력.
+
+**원클릭 실행(Windows)**: 매번 명령어 치기 번거로우면 — **`launch.bat`** 더블클릭 = 대시보드 실행 + 브라우저 자동 오픈(Python 자동 탐지, 경로 하드코딩 없음). **`Create Desktop Shortcut.bat`** 한 번 더블클릭 = 바탕화면에 **STS2 Mod Uploader** 아이콘 생성 → 이후 그 아이콘으로 실행. 아이콘은 repo의 `icon.ico`이며 `python make_icon.py`로 재생성/수정 가능.
 
 ## License
 
