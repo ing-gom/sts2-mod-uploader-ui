@@ -804,6 +804,9 @@ const I18N={
   chkContent:"Content to upload (installed)",chkItem:"Workshop item exists",chkItemNew:"(will be created)",
   readyYes:"✔ Ready to publish",readyNo:"⚠ Some items missing",
   desc:"description",edit:"Edit",preview:"Preview",uploadAs:"Upload as",bbcode:"BBCode",plain:"Plain text",
+  descBytesOk:"{n} / {max} bytes",
+  descBytesNear:"{n} / {max} bytes · approaching Steam's per-language description limit",
+  descBytesOver:"⚠ {n} / {max} bytes · over Steam's description limit — on upload this language is silently rejected (InvalidParam) and NOT registered. Shorten it. Note: CJK/Cyrillic take 2–3 bytes per character.",
   tagsPh:"tool, ...",thumbHint:"pick a file → auto-converted to PNG under 1MB",setBtn:"Set",
   reqItems:"required items",reqItemsPh:"workshop item IDs, comma-separated (e.g. 3752522987)",
   reqItemsHint:"Steam \"Required Items\". Leave empty: whatever is set on the Workshop page is preserved automatically and re-imported on every upload. Fill in only to override and manage them here.",
@@ -835,6 +838,9 @@ const I18N={
   chkContent:"업로드할 content (설치본)",chkItem:"워크샵 아이템 존재",chkItemNew:"(신규 생성됨)",
   readyYes:"✔ 게시 준비 완료",readyNo:"⚠ 미충족 항목 있음",
   desc:"설명",edit:"편집",preview:"미리보기",uploadAs:"업로드 형식",bbcode:"BBCode",plain:"일반텍스트",
+  descBytesOk:"{n} / {max} bytes",
+  descBytesNear:"{n} / {max} bytes · Steam 언어별 설명 한도에 근접",
+  descBytesOver:"⚠ {n} / {max} bytes · Steam 설명 한도 초과 — 업로드 시 이 언어는 조용히 거부(InvalidParam)되어 등록되지 않습니다. 줄여주세요. (한중일·키릴 문자는 글자당 2~3바이트)",
   tagsPh:"tool, ...",thumbHint:"파일 선택 → 1MB 이하 PNG 자동 변환",setBtn:"등록",
   reqItems:"필요한 아이템",reqItemsPh:"워크샵 아이템 ID, 쉼표로 구분 (예: 3752522987)",
   reqItemsHint:"Steam '필요한 아이템(Required Items)'. 비워두면 워크샵에 설정된 항목이 업로드 때마다 자동 유지·재반영됩니다(자동 가져오기). 입력하면 그 목록으로 직접 지정(덮어쓰기).",
@@ -989,6 +995,7 @@ function renderDetail(m){
         </div>
         <textarea id="f_desc" rows="12" oninput="langDescInput()">${esc(m.cfg.description)}</textarea>
         <div id="f_preview" class="preview" style="display:none"></div>
+        <div id="f_bytes" class="sub" style="margin-top:4px"></div>
       </div>
       <label>tags</label>
       <div>
@@ -1008,7 +1015,7 @@ function renderDetail(m){
       </div>
       <label>credit</label>
       <div>
-        <label class="chk"><input type="checkbox" id="f_credit" onchange="window.CREDIT=this.checked"> <span id="f_credit_label"></span></label>
+        <label class="chk"><input type="checkbox" id="f_credit" onchange="window.CREDIT=this.checked;updateDescBytes()"> <span id="f_credit_label"></span></label>
         <div class="sub" id="f_credit_hint" style="margin-top:4px"></div>
       </div>
       <label>thumbnail</label>
@@ -1072,7 +1079,7 @@ function selectLang(c){
   applyDescUI(); renderLangTabs(); updateLangNote();
 }
 function langTitleInput(){ if(window.LANGDATA&&window.CURLANG) window.LANGDATA[window.CURLANG].title=$('#f_title').value; renderLangTabs(); }
-function langDescInput(){ if(window.LANGDATA&&window.CURLANG) window.LANGDATA[window.CURLANG].description=$('#f_desc').value; if(window.DVIEW==='preview') applyDescUI(); renderLangTabs(); }
+function langDescInput(){ if(window.LANGDATA&&window.CURLANG) window.LANGDATA[window.CURLANG].description=$('#f_desc').value; if(window.DVIEW==='preview') applyDescUI(); renderLangTabs(); updateDescBytes(); }
 function setPrimaryLang(){ saveCurLang(); window.PRIMARYLANG=window.CURLANG; renderLangTabs(); updateLangNote(); }
 function updateLangNote(){
   const el=$('#langnote'); if(!el) return;
@@ -1151,6 +1158,25 @@ function applyDescUI(){
   const set=(id,on)=>{const e=$(id);if(e)e.classList.toggle('active',on);};
   set('#v_edit',edit); set('#v_prev',!edit);
   set('#m_bb',!plain); set('#m_pl',plain);
+  updateDescBytes();
+}
+// Steam caps each language's description at 8000 UTF-8 bytes; an over-limit
+// localization is silently rejected (k_EResultInvalidParam) on upload. Show a
+// live byte count (incl. the credit footer that gets appended at save time) so
+// the limit is visible per language before publishing.
+const DESC_BYTE_LIMIT=8000;
+const _CREDIT_BB="\n\n[hr][/hr]\n[i]Published with [url=https://github.com/ing-gom/sts2-mod-uploader-ui]STS2 Mod Uploader UI[/url].[/i]";
+const _CREDIT_TXT="\n\nPublished with STS2 Mod Uploader UI — https://github.com/ing-gom/sts2-mod-uploader-ui";
+function utf8Bytes(s){return new TextEncoder().encode(s||'').length;}
+function updateDescBytes(){
+  const ta=$('#f_desc'), el=$('#f_bytes'); if(!ta||!el) return;
+  let s=ta.value||'';
+  if(window.CREDIT) s+=(window.DMODE==='plain'?_CREDIT_TXT:_CREDIT_BB);
+  const n=utf8Bytes(s), max=DESC_BYTE_LIMIT;
+  const key = n>max ? 'descBytesOver' : (n>max-400 ? 'descBytesNear' : 'descBytesOk');
+  el.textContent=t(key).replace('{n}',n).replace('{max}',max);
+  el.style.color = n>max ? '#ff6b6b' : (n>max-400 ? '#e0b341' : '');
+  el.style.fontWeight = n>max ? '600' : '';
 }
 function setView(x){window.DVIEW=x;applyDescUI();}
 function setMode(x){window.DMODE=x;applyDescUI();}
