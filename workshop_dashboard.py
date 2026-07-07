@@ -805,6 +805,30 @@ def run_pipeline(mod, do_build, log):
     return None
 
 
+def open_in_file_manager(path):
+    """OS 파일 탐색기로 폴더 열기 (서버 로컬)."""
+    if os.name == "nt":
+        os.startfile(path)  # type: ignore[attr-defined]
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path])
+
+
+def mod_folder_path(mod_id):
+    """배포 대상 모드 폴더 경로. 설치본(GAME_MODS/<id>) 우선, 없으면 소스 폴더."""
+    for m in discover_mods():
+        if m["id"] == mod_id:
+            ip = m.get("installed_path")
+            if ip and os.path.isdir(ip):
+                return ip
+            md = m.get("mod_dir")
+            if md and os.path.isdir(md):
+                return md
+    p = os.path.join(GAME_MODS, mod_id)
+    return p if os.path.isdir(p) else None
+
+
 def steam_running():
     try:
         out = subprocess.run(
@@ -955,6 +979,7 @@ const I18N={
   wsIdLinked:"linked locally → Upload updates this item",
   wsIdMissing:"no local mod_id — paste an existing ID to avoid a duplicate",
   saveCfg:"Save config",privateNote:"※ private — switch to public and Upload again when ready",
+  openFolder:"Open mod folder",openWorkshop:"Open Workshop page",openFolderFail:"[folder] failed: ",
   creditFooter:"Credit",creditHint:"Optional — append a link to STS2 Mod Uploader UI at the end of the description.",
   logReady:"Ready. Steam must be running and logged in to upload.",
   busy:"[busy] another upload is in progress",cfgSaved:"[config] saved",
@@ -989,6 +1014,7 @@ const I18N={
   wsIdLinked:"로컬 연결됨 → Upload 시 이 아이템 갱신",
   wsIdMissing:"로컬 mod_id 없음 — 기존 아이템이 있으면 ID 입력(중복 생성 방지)",
   saveCfg:"config 저장",privateNote:"※ private — 확인 후 public 으로 바꿔 다시 Upload",
+  openFolder:"모드 폴더 열기",openWorkshop:"창작마당 열기",openFolderFail:"[폴더] 실패: ",
   creditFooter:"크레딧 표기",creditHint:"선택 — 설명 끝에 STS2 Mod Uploader UI 링크를 추가합니다.",
   logReady:"준비됨. 업로드 시 Steam 이 실행·로그인된 상태여야 합니다.",
   busy:"[busy] 다른 업로드가 진행 중",cfgSaved:"[config] 저장됨",
@@ -1023,6 +1049,7 @@ const I18N={
   wsIdLinked:"已在本地关联 → 上传将更新此项目",
   wsIdMissing:"没有本地 mod_id — 若已有项目请粘贴其 ID 以避免重复",
   saveCfg:"保存配置",privateNote:"※ 私密 — 准备好后切换为公开并再次上传",
+  openFolder:"打开模组文件夹",openWorkshop:"打开创意工坊页面",openFolderFail:"[文件夹] 失败： ",
   creditFooter:"署名",creditHint:"可选 — 在描述末尾附加 STS2 Mod Uploader UI 链接。",
   logReady:"就绪。上传时 Steam 必须处于运行并已登录状态。",
   busy:"[busy] 另一个上传正在进行中",cfgSaved:"[config] 已保存",
@@ -1210,6 +1237,8 @@ function renderDetail(m){
       <button class="sec" onclick="save('${m.id}')">${esc(t('saveCfg'))}</button>
       <button onclick="run('${m.id}',false)" ${m.installed?'':'disabled'}>Upload</button>
       <button class="sec" onclick="run('${m.id}',true)" ${m.csproj?'':'disabled'}>Build+Upload</button>
+      <button class="sec" onclick="openFolder('${m.id}')">${esc(t('openFolder'))}</button>
+      ${m.workshop_item_id?`<button class="sec" onclick="window.open('https://steamcommunity.com/sharedfiles/filedetails/?id=${m.workshop_item_id}','_blank')">${esc(t('openWorkshop'))}</button>`:''}
       <span class="sub" id="privHint" style="${m.cfg.visibility==='private'?'':'display:none'}">${esc(t('privateNote'))}</span>
     </div>
     <div id="log">${esc(t('logReady'))}\n</div>`;
@@ -1359,6 +1388,13 @@ async function uploadImg(id){
   logln(d.ok?(t('imgSet')+' ('+kb(d.size)+')'):(t('imgFail')+d.error));
   load(true);
 }
+async function openFolder(id){
+  try{
+    const r=await fetch('/api/open_folder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    const d=await r.json();
+    if(!d.ok) logln(t('openFolderFail')+(d.error||''));
+  }catch(e){ logln(t('openFolderFail')+e); }
+}
 async function saveModId(id){
   const v=$('#f_modid').value.trim();
   const r=await fetch('/api/modid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mod_id:v})});
@@ -1502,6 +1538,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "mod_id": val})
             except Exception as e:
                 self._json({"ok": False, "error": str(e)})
+        elif parsed.path == "/api/open_folder":
+            folder = mod_folder_path(data.get("id"))
+            if folder and os.path.isdir(folder):
+                try:
+                    open_in_file_manager(folder)
+                    self._json({"ok": True, "path": folder})
+                except Exception as e:
+                    self._json({"ok": False, "error": str(e)})
+            else:
+                self._json({"ok": False, "error": "folder not found"})
         else:
             self._send(404, "text/plain", b"not found")
 
