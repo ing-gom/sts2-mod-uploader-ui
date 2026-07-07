@@ -4,7 +4,7 @@ A small **local web dashboard** for publishing & updating your *Slay the Spire 2
 
 **🔗 Project page: https://ing-gom.github.io/sts2-mod-uploader-ui/**
 
-> 🇰🇷 한국어 안내는 아래 [한국어](#한국어) 참고.
+> 🇰🇷 한국어 안내는 아래 [한국어](#한국어) · 🇨🇳 中文说明见下方 [中文](#中文)。
 
 <!-- 스크린샷을 docs/screenshot.png 에 추가하면 여기 표시됩니다 -->
 
@@ -14,7 +14,7 @@ A small **local web dashboard** for publishing & updating your *Slay the Spire 2
 - **Master–detail UI** — pick a mod on the left, review it on the right.
 - **Registration checklist** — shows at a glance whether the **title / description / thumbnail / content / workshop item** are set (`✔ / ✘`) before you publish.
 - **Thumbnail** — pick an image file; it's auto-converted to PNG and shrunk **under Steam's 1 MB preview limit**.
-- **Description** — BBCode editor with insert buttons + an **Edit / Preview** toggle that renders BBCode the way Steam will show it. Optional plain-text mode.
+- **Description** — BBCode editor with insert buttons + an **Edit / Preview** toggle that renders BBCode the way Steam will show it. Optional plain-text mode. A **live byte counter** warns when a language's description exceeds Steam's 8000-byte limit (over-limit languages are silently rejected on upload). Each language's description is stored as its own file under `.workshop/<ModId>/descriptions/<lang>.bbcode`, so you can also edit them externally.
 - **Multiple languages** — language chips above the title; click one to edit that language's title & description in the same editor (`✓` marks the languages you've provided). Each Steam user sees the page in their own language, falling back to the default. *(requires the patched uploader — see below)*
 - **Required items are preserved** — the workshop's existing *Required Items* (dependencies) are kept automatically on every upload and shown in the dashboard, instead of being wiped. *(requires the patched uploader — see below)*
 - **Workshop item ID** field — pre-filled if known; paste an existing ID to update that item instead of creating a duplicate.
@@ -100,13 +100,27 @@ The patch is also proposed upstream; if it lands in the official tool, you can s
 
 *Slay the Spire 2* 모드를 Steam 창작마당에 올리고 갱신하는 **로컬 웹 대시보드**입니다. 공식 `ModUploader.exe` CLI를 UI로 감싸, JSON 편집·명령어 실행 없이 한 화면에서 검토하고 업로드합니다.
 
-**기능**: 게임 `mods/` 폴더 자동 스캔(레지스트리+`libraryfolders.vdf`로 Steam 경로 감지) · 좌측 목록/우측 상세 · 등록 검증 체크리스트(타이틀/설명/썸네일/content/아이템) · 썸네일 파일 선택→1MB 이하 PNG 자동 변환 · BBCode 편집 + **편집/미리보기**(스팀처럼 렌더링) · **다국어**(타이틀 위 언어 칩, 클릭 시 그 언어의 타이틀/설명 편집, ✓=제공됨) · **필요한 아이템(Required Items) 자동 보존**(업로드해도 초기화되지 않음) · 워크샵 ID 입력(중복 생성 방지) · 원클릭 업로드(런타임 부산물 제외) + 실시간 로그 · 선택적 Build+Upload(`config.json`의 `sources`에 csproj 매핑 시). ※다국어·필요한 아이템 보존은 **패치된 업로더** 필요(아래).
+**기능**: 게임 `mods/` 폴더 자동 스캔(레지스트리+`libraryfolders.vdf`로 Steam 경로 감지) · 좌측 목록/우측 상세 · 등록 검증 체크리스트(타이틀/설명/썸네일/content/아이템) · 썸네일 파일 선택→1MB 이하 PNG 자동 변환 · BBCode 편집 + **편집/미리보기**(스팀처럼 렌더링) · **설명 바이트 카운터**(Steam 언어별 8000바이트 한도 초과 시 실시간 경고—초과 언어는 업로드 시 조용히 거부됨) · **다국어**(타이틀 위 언어 칩, 클릭 시 그 언어의 타이틀/설명 편집, ✓=제공됨, 설명은 `.workshop/<ModId>/descriptions/<lang>.bbcode` 파일로 언어별 분리 저장) · **필요한 아이템(Required Items) 자동 보존**(업로드해도 초기화되지 않음) · 워크샵 ID 입력(중복 생성 방지) · 원클릭 업로드(런타임 부산물 제외) + 실시간 로그 · 선택적 Build+Upload(`config.json`의 `sources`에 csproj 매핑 시). ※다국어·필요한 아이템 보존은 **패치된 업로더** 필요(아래).
 
 **필요**: Windows + **Steam 실행/로그인**(헤드리스 불가), Python 3.8+ & `pip install pillow`, STS2 업로더. **패치 빌드(권장)** = 이 repo [Releases](https://github.com/ing-gom/sts2-mod-uploader-ui/releases)의 `ModUploader-patched-win-x64.zip`(다국어 + 필요한 아이템 보존 추가, 공식 [MegaCrit/sts2-mod-uploader](https://github.com/MegaCrit/sts2-mod-uploader) MIT 포크). 공식 빌드도 일반 업로드는 되지만 다국어 무시 + 필요한 아이템 초기화. 업로더 위치는 스크립트 옆에 두거나 `config.json`의 `uploader_dir` / `STS2_UPLOADER_DIR`로 지정.
 
 **실행**: `pip install pillow` 후 `python workshop_dashboard.py` → 안내 URL 열기 → 모드 선택 → 타이틀/설명/썸네일 입력 → 처음엔 `private`로 Upload → 확인 후 `public`. ⚠️ 업로드는 **실제 창작마당 아이템을 생성**하므로 처음엔 private 권장. `mod_id.txt`는 아이템 연결 정보라 잃으면 중복 생성 위험 → 워크샵 ID 칸에 기존 ID 입력.
 
 **원클릭 실행(Windows)**: 매번 명령어 치기 번거로우면 — **`launch.bat`** 더블클릭 = 대시보드 실행 + 브라우저 자동 오픈(Python 자동 탐지, 경로 하드코딩 없음). **`Create Desktop Shortcut.bat`** 한 번 더블클릭 = 바탕화면에 **STS2 Mod Uploader** 아이콘 생성 → 이후 그 아이콘으로 실행. 아이콘은 repo의 `icon.ico`이며 `python make_icon.py`로 재생성/수정 가능.
+
+---
+
+## 中文
+
+将你的 *Slay the Spire 2* 模组发布并更新到 Steam 创意工坊的**本地网页面板**。它把官方 `ModUploader.exe` CLI 包装成 UI，让你在一个界面里检查并上传，无需手动编辑 JSON 或运行命令。
+
+**功能**：扫描游戏 `mods/` 文件夹（通过注册表 + `libraryfolders.vdf` 自动检测 Steam 路径）· 左侧列表 / 右侧详情 · 注册检查清单（标题 / 描述 / 缩略图 / 内容 / 项目）· 选择图片文件 → 自动转换为 1MB 以下 PNG · BBCode 编辑器 + **编辑 / 预览**（按 Steam 的方式渲染）· **描述字节计数器**（Steam 单语言描述上限为 8000 字节，超出会被静默拒绝，实时警告）· **多语言**（标题上方的语言标签，点击即可编辑该语言的标题 / 描述，✓ = 已提供；描述按语言分别存为 `.workshop/<ModId>/descriptions/<lang>.bbcode` 文件）· **必需项目（Required Items）自动保留**（上传时不会被清空）· 创意工坊 ID 输入（避免重复创建）· 一键上传（排除运行时垃圾文件）+ 实时日志 · 可选 Build+Upload（在 `config.json` 的 `sources` 中映射 csproj 时）。※多语言与必需项目保留需要**打了补丁的上传器**（见英文 [Patched uploader](#patched-uploader)）。
+
+**要求**：Windows + **Steam 运行并登录**（无法无头运行）、Python 3.8+ 与 `pip install pillow`、STS2 上传器。**补丁版（推荐）** = 本仓库 [Releases](https://github.com/ing-gom/sts2-mod-uploader-ui/releases) 中的 `ModUploader-patched-win-x64.zip`（新增多语言 + 必需项目保留，基于官方 [MegaCrit/sts2-mod-uploader](https://github.com/MegaCrit/sts2-mod-uploader) 的 MIT 分支）。官方版也能进行普通上传，但会忽略多语言并清空必需项目。上传器可放在脚本旁边，或通过 `config.json` 的 `uploader_dir` / `STS2_UPLOADER_DIR` 指定。
+
+**运行**：`pip install pillow` 后 `python workshop_dashboard.py` → 打开提示的 URL → 选择模组 → 填写标题 / 描述 / 缩略图 → 首次用 `private` 上传 → 确认后改为 `public`。⚠️ 上传会**创建真实的创意工坊项目**，首次建议用 private。`mod_id.txt` 是项目关联信息，丢失会导致重复创建 → 请在创意工坊 ID 字段填入现有 ID。
+
+**一键启动（Windows）**：不想每次输入命令 —— 双击 **`launch.bat`** = 启动面板 + 自动打开浏览器（自动检测 Python，无需硬编码路径）。再双击一次 **`Create Desktop Shortcut.bat`** = 在桌面创建 **STS2 Mod Uploader** 图标，之后用该图标启动。图标为仓库中的 `icon.ico`，可用 `python make_icon.py` 重新生成 / 自定义。
 
 ## License
 

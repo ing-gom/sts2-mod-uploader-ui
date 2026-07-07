@@ -328,6 +328,123 @@ def _apply_credit(desc, mode, on):
     return desc
 
 
+# ----------------------------------------------------------------------------
+# 언어별 설명 파일 (descriptions/<lang>.bbcode)
+#   workshop.json 은 타이틀·메타데이터만 담고, 설명 본문은 언어별 파일로 분리 저장한다.
+#   파일 내용 = 푸터 없는 편집 원문. 푸터는 업로드 조립 시점에만 적용.
+# ----------------------------------------------------------------------------
+DESC_SUBDIR = "descriptions"
+
+
+def desc_dir(mod_id):
+    return os.path.join(workspace_dir(mod_id), DESC_SUBDIR)
+
+
+def _desc_file(mod_id, lang):
+    return os.path.join(desc_dir(mod_id), ((lang or "english").strip() or "english") + ".bbcode")
+
+
+def read_desc_file(mod_id, lang):
+    """언어별 설명 파일 내용(푸터 없는 편집 원문). 파일이 없으면 None."""
+    p = _desc_file(mod_id, lang)
+    if os.path.isfile(p):
+        try:
+            with open(p, encoding="utf-8") as f:
+                return f.read()
+        except Exception:
+            pass
+    return None
+
+
+def write_desc_file(mod_id, lang, text):
+    """언어별 설명을 파일로 저장(푸터 제거한 편집 원문). 빈 값이면 파일 제거."""
+    p = _desc_file(mod_id, lang)
+    text = _strip_credit(text or "")
+    if text.strip():
+        os.makedirs(desc_dir(mod_id), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(text)
+    elif os.path.isfile(p):
+        try:
+            os.remove(p)
+        except Exception:
+            pass
+
+
+def _prune_desc_files(mod_id, keep_langs):
+    """keep_langs 에 없는 언어의 설명 파일 정리(언어 제거 시)."""
+    d = desc_dir(mod_id)
+    if not os.path.isdir(d):
+        return
+    for fn in os.listdir(d):
+        if fn.endswith(".bbcode") and fn[:-len(".bbcode")] not in keep_langs:
+            try:
+                os.remove(os.path.join(d, fn))
+            except Exception:
+                pass
+
+
+def migrate_split_descriptions(mod_id):
+    """구형식(설명이 workshop.json 인라인)을 언어별 파일로 1회 분리. 이미 분리됐으면 no-op."""
+    p = os.path.join(workspace_dir(mod_id), "workshop.json")
+    if not os.path.isfile(p):
+        return
+    try:
+        with open(p, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception:
+        return
+    prim = (cfg.get("language") or "english").strip() or "english"
+    changed = False
+    if "description" in cfg:
+        write_desc_file(mod_id, prim, cfg.pop("description") or "")
+        changed = True
+    for L in (cfg.get("localizations") or []):
+        if "description" in L:
+            write_desc_file(mod_id, L.get("language", ""), L.pop("description") or "")
+            changed = True
+    if changed:
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+
+def assemble_workshop_json_for_upload(mod_id):
+    """업로드 직전: 언어별 설명 파일을 workshop.json 에 합쳐(푸터 적용) 업로더가 읽게 한다.
+    파일이 없으면 남아있는 인라인 설명(미마이그레이션)으로 폴백."""
+    p = os.path.join(workspace_dir(mod_id), "workshop.json")
+    with open(p, encoding="utf-8") as f:
+        cfg = json.load(f)
+    prim = (cfg.get("language") or "english").strip() or "english"
+    mode = cfg.get("descMode", "bbcode")
+    on = bool(cfg.get("creditFooter", False))
+    body = read_desc_file(mod_id, prim)
+    if body is None:
+        body = _strip_credit(cfg.get("description", ""))
+    cfg["description"] = _apply_credit(body, mode, on)
+    for L in (cfg.get("localizations") or []):
+        b = read_desc_file(mod_id, L.get("language", ""))
+        if b is None:
+            b = _strip_credit(L.get("description", ""))
+        L["description"] = _apply_credit(b, mode, on)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+
+def strip_desc_from_workshop_json(mod_id):
+    """업로드 후: workshop.json 에서 설명 본문 제거(타이틀·메타·dependenciesLive 보존)."""
+    p = os.path.join(workspace_dir(mod_id), "workshop.json")
+    try:
+        with open(p, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception:
+        return
+    cfg.pop("description", None)
+    for L in (cfg.get("localizations") or []):
+        L.pop("description", None)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+
 def default_workshop_cfg(manifest):
     return {
         "title": manifest.get("name", manifest.get("id", "")),
@@ -353,13 +470,23 @@ def read_workshop_cfg(mod_id, manifest):
             base = default_workshop_cfg(manifest)
             base.update({k: v for k, v in cfg.items() if v is not None})
             base["creditFooter"] = bool(base.get("creditFooter", False))
-            base["description"] = _strip_credit(base.get("description", ""))  # 편집용은 푸터 제거
+            # 설명: 언어별 파일 우선, 없으면 workshop.json 인라인(구형식) 폴백. 편집용은 항상 푸터 제거.
+            prim = (base.get("language") or "english").strip() or "english"
+            base["description"] = _load_desc_for_edit(mod_id, prim, base.get("description", ""))
             for L in (base.get("localizations") or []):
-                L["description"] = _strip_credit(L.get("description", ""))  # 언어별 설명도 푸터 제거
+                L["description"] = _load_desc_for_edit(mod_id, L.get("language", ""), L.get("description", ""))
             return base
         except Exception:
             pass
     return default_workshop_cfg(manifest)
+
+
+def _load_desc_for_edit(mod_id, lang, inline_fallback):
+    """편집용 설명(푸터 없음): 언어별 파일 우선, 없으면 인라인 폴백을 푸터 제거해 반환."""
+    body = read_desc_file(mod_id, lang)
+    if body is not None:
+        return body
+    return _strip_credit(inline_fallback or "")
 
 
 def image_status(mod_id):
@@ -482,14 +609,16 @@ def ensure_workspace(mod):
 def save_workshop_cfg(mod_id, cfg):
     ws = workspace_dir(mod_id)
     os.makedirs(ws, exist_ok=True)
+    prim = (cfg.get("language") or "english").strip() or "english"
+    # workshop.json = 타이틀 + 메타데이터만. 설명 본문은 언어별 파일(descriptions/<lang>.bbcode)로 분리.
     out = {
         "title": cfg.get("title", ""),
-        "description": _apply_credit(cfg.get("description", ""), cfg.get("descMode", "bbcode"), cfg.get("creditFooter", False)),
         "visibility": cfg.get("visibility", "private"),
         "changeNote": cfg.get("changeNote", ""),
         "tags": cfg.get("tags", []),
         "descMode": cfg.get("descMode", "bbcode"),
         "creditFooter": bool(cfg.get("creditFooter", False)),
+        "language": prim,
     }
     # 필요한 아이템(Required Items) = Steam dependencies.
     #  비어 있으면 키 자체를 생략한다 → 패치된 업로더가 기존 required items 를 건드리지 않음
@@ -503,22 +632,21 @@ def save_workshop_cfg(mod_id, cfg):
     live = [int(d) for d in (cfg.get("dependenciesLive") or []) if str(d).strip().isdigit()]
     if live:
         out["dependenciesLive"] = live
-    # 다국어: 기본 언어 + 언어별 타이틀/설명. 푸터는 각 언어 설명에도 동일 적용(편집창은 깨끗).
-    out["language"] = (cfg.get("language") or "english").strip() or "english"
-    mode = cfg.get("descMode", "bbcode")
-    on = cfg.get("creditFooter", False)
+    # 설명 본문을 언어별 파일로 저장(푸터 없는 편집 원문). 기본 언어부터.
+    keep_langs = {prim}
+    write_desc_file(mod_id, prim, cfg.get("description", ""))
+    # 다국어: 언어별 타이틀은 workshop.json 에, 설명은 파일에.
     locs = []
     for L in (cfg.get("localizations") or []):
         lang = (L.get("language") or "").strip()
         if not lang:
             continue
-        locs.append({
-            "language": lang,
-            "title": L.get("title", ""),
-            "description": _apply_credit(L.get("description", ""), mode, on),
-        })
+        keep_langs.add(lang)
+        write_desc_file(mod_id, lang, L.get("description", ""))
+        locs.append({"language": lang, "title": L.get("title", "")})
     if locs:
         out["localizations"] = locs
+    _prune_desc_files(mod_id, keep_langs)  # 제거된 언어의 설명 파일 정리
     with open(os.path.join(ws, "workshop.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
 
@@ -654,8 +782,16 @@ def run_pipeline(mod, do_build, log):
 
     log("=== Upload to Steam Workshop ===")
     ws = workspace_dir(mod["id"])
-    rc = stream_cmd([UPLOADER_EXE, "upload", "-w", ws],
-                    cwd=UPLOADER_DIR, log=log)
+    # 업로더는 workshop.json 의 description/localizations[].description 를 읽는다.
+    #  분리 저장 구조라, 업로드 직전 언어별 파일을 합쳐 넣고(푸터 적용) 끝나면 다시 타이틀-only 로 복원.
+    migrate_split_descriptions(mod["id"])       # 구형식이면 먼저 분리
+    assemble_workshop_json_for_upload(mod["id"])
+    rc = 1
+    try:
+        rc = stream_cmd([UPLOADER_EXE, "upload", "-w", ws],
+                        cwd=UPLOADER_DIR, log=log)
+    finally:
+        strip_desc_from_workshop_json(mod["id"])  # 정본은 타이틀-only 유지(업로더가 쓴 dependenciesLive 는 보존)
     if rc != 0:
         raise RuntimeError("업로더가 실패했습니다 (Steam 실행/로그인 상태 확인).")
 
@@ -765,6 +901,7 @@ PAGE = r"""<!DOCTYPE html>
   <select id="lang" onchange="setLang(this.value)">
     <option value="en">English</option>
     <option value="ko">한국어</option>
+    <option value="zh">中文</option>
   </select>
 </div>
 <div class="sub"><span id="l_game"></span>: <b id="gv"></b> · <span id="l_up"></span>: <span id="upx"></span> · <span id="l_hint"></span></div>
@@ -858,10 +995,44 @@ const I18N={
   imgPick:"[img] 파일을 선택하세요",imgSet:"[img] 등록됨",imgFail:"[img] 실패: ",
   modidLinked:"[modid] 연결: ",modidRemoved:"[modid] 제거됨(새 아이템 생성 예정)",modidFail:"[modid] 실패: ",
   doneOk:"✅ 완료",doneFail:"❌ 실패: ",closed:"[연결 종료]",
-  needsUpdate:"업데이트 필요",deployed:"배포",current:"현재"}
+  needsUpdate:"업데이트 필요",deployed:"배포",current:"현재"},
+ zh:{title:"STS2 Steam 创意工坊上传",gameInstall:"游戏版本",uploader:"上传器",
+  hint:"在左侧选择一个模组以查看并上传",sortLabel:"排序",
+  sortRecent:"最近上传",sortName:"名称",sortInstalled:"已安装优先",
+  searchPh:"按名称筛选…",filterAll:"全部",filterPublished:"已发布",filterNeeds:"需要更新",filterUnpub:"未发布",count:"{n} 个模组",
+  warnNoUploader:"未找到 ModUploader.exe： ",warnSteam:"Steam 似乎未运行。上传前请启动 Steam 并登录。",
+  emptyDetail:"请在左侧选择一个模组。",badgeInstalled:"已安装",badgeNotInstalled:"未安装",unpublished:"未发布",
+  never:"从未",now:"刚刚",min:"分钟前",hour:"小时前",day:"天前",
+  imgNone:"无（将使用占位图）",imgPlaceholder:"⚠ 占位图（请替换）",imgOver:" · ⚠ 超过 1MB",
+  packagable:"{n} 个文件可打包",notInstalled:"未安装 — 需要 Build+Upload",workshop:"创意工坊",
+  chkTitle:"标题已设置",chkDesc:"描述已设置",chkImage:"缩略图已设置（非占位图/未超 1MB）",
+  chkContent:"待上传内容（已安装）",chkItem:"创意工坊项目存在",chkItemNew:"（将会创建）",
+  readyYes:"✔ 可以发布",readyNo:"⚠ 有缺失项",
+  desc:"描述",edit:"编辑",preview:"预览",uploadAs:"上传格式",bbcode:"BBCode",plain:"纯文本",
+  descBytesOk:"{n} / {max} bytes",
+  descBytesNear:"{n} / {max} bytes · 接近 Steam 单语言描述上限",
+  descBytesOver:"⚠ {n} / {max} bytes · 超过 Steam 描述上限 — 上传时该语言会被静默拒绝（InvalidParam）且不会注册。请缩短。（中日韩/西里尔字符每个约占 2–3 字节）",
+  tagsPh:"tool, ...",thumbHint:"选择文件 → 自动转换为 1MB 以下的 PNG",setBtn:"设置",
+  reqItems:"必需项目",reqItemsPh:"创意工坊项目 ID，用逗号分隔（例如 3752522987）",
+  reqItemsHint:"Steam “必需项目（Required Items）”。留空：创意工坊页面上已设置的项目会自动保留，并在每次上传时重新导入。仅在需要覆盖并在此管理时填写。",
+  reqItemsLive:"已从创意工坊自动同步（上次上传）：",
+  langLabel:"语言",langDefault:"默认",
+  langNoteDefault:"默认（当用户的 Steam 语言不可用时显示）：{lang}。点击某语言即可在下方编辑其标题和描述。✓ = 已提供；清空两个字段可移除该语言。",
+  langSetPrimary:"将当前语言设为默认",
+  wsIdPh:"现有创意工坊项目 ID（留空则在上传时新建）",apply:"应用",
+  wsIdLinked:"已在本地关联 → 上传将更新此项目",
+  wsIdMissing:"没有本地 mod_id — 若已有项目请粘贴其 ID 以避免重复",
+  saveCfg:"保存配置",privateNote:"※ 私密 — 准备好后切换为公开并再次上传",
+  creditFooter:"署名",creditHint:"可选 — 在描述末尾附加 STS2 Mod Uploader UI 链接。",
+  logReady:"就绪。上传时 Steam 必须处于运行并已登录状态。",
+  busy:"[busy] 另一个上传正在进行中",cfgSaved:"[config] 已保存",
+  imgPick:"[img] 请先选择文件",imgSet:"[img] 已设置",imgFail:"[img] 失败： ",
+  modidLinked:"[modid] 已关联： ",modidRemoved:"[modid] 已移除（将创建新项目）",modidFail:"[modid] 失败： ",
+  doneOk:"✅ 完成",doneFail:"❌ 失败： ",closed:"[连接已关闭]",
+  needsUpdate:"需要更新",deployed:"已部署",current:"当前"}
 };
 let MODS=[], SEL=null, busy=false, SORT='recent', FILTER='all';
-let LANG=localStorage.getItem('lang')||((navigator.language||'').startsWith('ko')?'ko':'en');
+let LANG=localStorage.getItem('lang')||(l=>l.startsWith('ko')?'ko':(l.startsWith('zh')?'zh':'en'))((navigator.language||'').toLowerCase());
 const $=s=>document.querySelector(s);
 function t(k){return (I18N[LANG]&&I18N[LANG][k])||I18N.en[k]||k;}
 function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
