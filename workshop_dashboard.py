@@ -780,6 +780,20 @@ def run_pipeline(mod, do_build, log):
     log("=== Package content ===")
     sync_content(mod, log)
 
+    # Guard: the packaged content's manifest version MUST match the source manifest. Catches a stale
+    # content copy — e.g. an incremental build that didn't refresh the game mods-folder manifest — which
+    # would otherwise publish OLD files under the NEW version's description / changeNote.
+    _cdir = os.path.join(workspace_dir(mod["id"]), "content")
+    _, _cman = _find_manifest(_cdir)
+    _cver = str(_cman.get("version", "")) if _cman else ""
+    _sver = str(mod.get("version", ""))
+    if _cver != _sver:
+        raise RuntimeError(
+            f"content 버전 불일치: 패키징된 content={_cver or '(없음)'} vs 소스={_sver}. "
+            f"게임 mods 폴더의 매니페스트가 낡았습니다 — 'dotnet build -c Release -t:Rebuild' 로 "
+            f"재빌드(매니페스트 재배포)한 뒤 다시 업로드하세요.")
+    log(f"[guard] content 버전 확인 OK: {_cver}")
+
     log("=== Upload to Steam Workshop ===")
     ws = workspace_dir(mod["id"])
     # 업로더는 workshop.json 의 description/localizations[].description 를 읽는다.
